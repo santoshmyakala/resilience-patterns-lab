@@ -1,0 +1,39 @@
+# Local playground: API + worker + Postgres + ElasticMQ (SQS-compatible) + a fault-injectable dependency.
+#   docker compose up --build
+#   curl -s localhost:8080/payments -H 'Idempotency-Key: demo-0001' -H 'content-type: application/json' \
+#        -d '{"customer_id":"acme","amount_cents":4200}'
+#   curl -s -X POST 'localhost:8081/admin/mode?mode=down'      # watch the circuit open, payments degrade to review
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_PASSWORD: lab, POSTGRES_DB: lab }
+    healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 2s, retries: 20 }
+  sqs:
+    image: softwaremill/elasticmq-native:1.6.15
+  migrate:
+    build: .
+    command: ["python", "-m", "lab.db"]
+    environment: { DATABASE_URL: "postgresql://postgres:lab@postgres:5432/lab" }
+    depends_on: { postgres: { condition: service_healthy } }
+  fraud:
+    build: .
+    command: ["uvicorn", "lab.fraud_sim:app", "--host", "0.0.0.0", "--port", "8081"]
+    ports: ["8081:8081"]
+  api:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      DATABASE_URL: "postgresql://postgres:lab@postgres:5432/lab"
+      FRAUD_URL: "http://fraud:8081"
+      MAX_INFLIGHT: "32"
+    depends_on: { migrate: { condition: service_completed_successfully } }
+  worker:
+    build: .
+    command: ["python", "-m", "lab.worker"]
+    environment:
+      DATABASE_URL: "postgresql://postgres:lab@postgres:5432/lab"
+      SQS_ENDPOINT: "http://sqs:9324"
+      AWS_ACCESS_KEY_ID: "local"       # ElasticMQ ignores credentials; boto3 just needs values
+      AWS_SECRET_ACCESS_KEY: "local"
+      AWS_DEFAULT_REGION: "us-east-1"
+    depends_on: { migrate: { condition: service_completed_successfully }, sqs: { condition: service_started } }

@@ -1,0 +1,77 @@
+- out: exactly-once
+  title: Exactly-once effects on an at-least-once queue
+  subtitle: One transaction records the payment, the idempotency key and the job; the worker acknowledges only after its effect is committed
+  grid: {dx: 240, dy: 160}
+  groups:
+    - {id: tx1, label: One transaction, icon: postgresql, color: blue, box: [1, 0, 2, 0]}
+    - {id: tx2, label: Same transaction, icon: postgresql, color: green, box: [2, 1.3, 2, 1.3]}
+  nodes:
+    - {id: client, label: Client, sub: "Idempotency-Key: order-42", icon: user, at: [0, 0], color: gray}
+    - {id: api, label: API, sub: key + payment, icon: [fastapi, python], at: [1, 0], color: blue}
+    - {id: outbox, label: Outbox row, sub: same commit as payment, icon: database, at: [2, 0], color: blue}
+    - {id: relay, label: Relay, sub: SKIP LOCKED · may resend, icon: gear, at: [3, 0], color: purple}
+    - {id: sqs, label: SQS, sub: at-least-once delivery, icon: queue, at: [4, 0], color: amber, pulse: true}
+    - {id: worker, label: Worker, sub: receive · visibility 6× timeout, icon: [python, container], at: [4, 1.3], color: amber}
+    - {id: psp, label: Payment provider, sub: external · dedupes by key, icon: api, at: [3, 1.3], color: purple}
+    - {id: ledger, label: Ledger insert, sub: "ON CONFLICT DO NOTHING", icon: database, at: [2, 1.3], color: green}
+    - {id: ack, label: Ack (delete), sub: only after commit, icon: check, at: [1, 1.3], color: green}
+    - {id: crash, label: Crash before ack, sub: message comes back, icon: bug, at: [1, 2.45], color: red}
+    - {id: dlq, label: DLQ, sub: poison after 5 receives, icon: queue, at: [5.15, 1.3], color: red}
+  edges:
+    - {from: client, to: api, label: POST, kind: data}
+    - {from: api, to: outbox, kind: data, packet: db}
+    - {from: outbox, to: relay, kind: data}
+    - {from: relay, to: sqs, kind: async, packet: doc}
+    - {from: sqs, to: worker, kind: async, packet: doc}
+    - {from: worker, to: psp, label: capture(key), kind: secure}
+    - {from: psp, to: ledger, label: insert once, kind: data, packet: db}
+    - {from: ledger, to: ack, label: commit, kind: data}
+    - {from: ledger, to: crash, kind: deny, route: vh}
+    - {from: crash, to: sqs, label: redelivered → no-op, kind: control, via: [[4.58, 2.45], [4.58, 0]], at: 0.3}
+    - {from: worker, to: dlq, kind: deny}
+
+- out: request-protection
+  title: Protecting a request from a failing dependency
+  subtitle: Shed load early, bound every call by the remaining deadline, retry within a budget, stop calling a broken dependency, degrade instead of failing
+  grid: {dx: 215, dy: 155}
+  nodes:
+    - {id: req, label: Request, sub: "X-Request-Deadline-Ms", icon: users, at: [0, 0.5], color: gray}
+    - {id: adm, label: Admission control, sub: ≤ 64 in flight, icon: gateway, at: [1, 0.5], color: blue, pulse: true}
+    - {id: shed, label: 503 + Retry-After, sub: rejected in < 1 ms, icon: deny, at: [1, 1.65], color: red}
+    - {id: ddl, label: Deadline, sub: remaining budget per hop, icon: scheduler, at: [2, 0.5], color: blue}
+    - {id: rty, label: Retry budget, sub: ≤ 10% extra · full jitter, icon: backup, at: [3, 0.5], color: purple}
+    - {id: cb, label: Circuit breaker, sub: open after 5 failures, icon: switch, at: [4, 0.5], color: orange}
+    - {id: dep, label: Fraud service, sub: slow or down, icon: api, at: [5, 0.5], color: red}
+    - {id: fb, label: Fallback, sub: accept · manual review, icon: check, at: [4, 1.65], color: green}
+  edges:
+    - {from: req, to: adm, kind: data}
+    - {from: adm, to: shed, label: over capacity, kind: deny}
+    - {from: adm, to: ddl, kind: data}
+    - {from: ddl, to: rty, kind: data}
+    - {from: rty, to: cb, kind: data}
+    - {from: cb, to: dep, kind: data}
+    - {from: cb, to: fb, label: open / exhausted, kind: control}
+
+- out: retry-amplification
+  title: "Retry amplification: 3 × 3 × 3 = 27"
+  subtitle: Measured by tests/test_amplification.py — retry at the edge only, and cap retries with a budget
+  grid: {dx: 215, dy: 140}
+  groups:
+    - {id: bad, label: Every layer retries 3× → 27 calls to C per request, icon: alert, color: red, box: [0, 0, 3, 0]}
+    - {id: good, label: "Edge retries only, within a 10% budget → ≤ 1.1 calls to C per request", icon: shield, color: green, box: [0, 1.55, 3, 1.55]}
+  nodes:
+    - {id: c1, label: Client, sub: 3 attempts, icon: user, at: [0, 0], color: gray, badge: "×3"}
+    - {id: a1, label: Service A, sub: 3 attempts, icon: container, at: [1, 0], color: orange, badge: "×9"}
+    - {id: b1, label: Service B, sub: 3 attempts, icon: container, at: [2, 0], color: orange, badge: "×27"}
+    - {id: x1, label: Service C, sub: overloaded, icon: database, at: [3, 0], color: red, pulse: true}
+    - {id: c2, label: Client, sub: 3 attempts · budget, icon: user, at: [0, 1.55], color: gray, badge: "×1.1"}
+    - {id: a2, label: Service A, sub: no retries, icon: container, at: [1, 1.55], color: green}
+    - {id: b2, label: Service B, sub: no retries, icon: container, at: [2, 1.55], color: green}
+    - {id: x2, label: Service C, sub: recovers, icon: database, at: [3, 1.55], color: green}
+  edges:
+    - {from: c1, to: a1, kind: deny, packets: 3, speed: 160}
+    - {from: a1, to: b1, kind: deny, packets: 3, speed: 160}
+    - {from: b1, to: x1, kind: deny, packets: 3, speed: 160}
+    - {from: c2, to: a2, kind: data}
+    - {from: a2, to: b2, kind: data}
+    - {from: b2, to: x2, kind: data}
