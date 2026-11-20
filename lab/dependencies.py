@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from dataclasses import dataclass, field
 
 import httpx
@@ -81,9 +82,12 @@ class FakePaymentProvider:
 
     charges: dict[str, int] = field(default_factory=dict)
     calls: int = 0
+    latency_seconds: float = 0.0  # simulated PSP round trip (game day uses it to have work in flight)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def capture(self, idempotency_key: str, amount_cents: int) -> str:
+        if self.latency_seconds:
+            time.sleep(self.latency_seconds)
         with self._lock:
             self.calls += 1
             self.charges.setdefault(idempotency_key, amount_cents)  # same key → same charge, never a second one

@@ -1,0 +1,30 @@
+# Diagrams as code: the committed SVGs must match docs/diagrams/diagrams.yaml.
+name: diagrams
+
+on:
+  pull_request:
+    paths: ["docs/diagrams/**"]
+  push:
+    branches: [main]
+    paths: ["docs/diagrams/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  up-to-date:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: santoshmyakala/santoshmyakala # hosts the archdiagram generator and icon set
+          path: .archdiagram
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml==6.0.3
+      - run: python .archdiagram/tools/archdiagram/archdiagram.py --icons .archdiagram/assets/icons docs/diagrams/diagrams.yaml
+      - name: Fail if the SVGs are stale
+        run: git diff --exit-code -- docs/diagrams || { echo "::error::Regenerate the diagrams and commit the SVGs"; exit 1; }

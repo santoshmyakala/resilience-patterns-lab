@@ -10,5 +10,5 @@ DEGRADED = Counter("lab_degraded_decisions_total", "Requests served with a degra
 IDEMPOTENT_REPLAYS = Counter("lab_idempotent_replays_total", "Requests answered from the idempotency store")
 DUPLICATE_DELIVERIES = Counter("lab_duplicate_deliveries_total", "Messages whose effect was already applied")
 LATENCY = Histogram(
-    "lab_request_seconds", "Request latency", ["route"], buckets=(0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
+    "lab_request_seconds", "Request latency", ["route"], buckets=(0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 2.0, 3.2)
 )

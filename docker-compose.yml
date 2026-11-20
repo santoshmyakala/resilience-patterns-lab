@@ -7,6 +7,7 @@ services:
   postgres:
     image: postgres:16-alpine
     environment: { POSTGRES_PASSWORD: lab, POSTGRES_DB: lab }
+    ports: ["5432:5432"] # the game day checks the ledger directly
     healthcheck: { test: ["CMD", "pg_isready", "-U", "postgres"], interval: 2s, retries: 20 }
   sqs:
     image: softwaremill/elasticmq-native:1.6.15
@@ -26,6 +27,7 @@ services:
       DATABASE_URL: "postgresql://postgres:lab@postgres:5432/lab"
       FRAUD_URL: "http://fraud:8081"
       MAX_INFLIGHT: "32"
+      FRAUD_BREAKER_RESET_SECONDS: "10"
     depends_on: { migrate: { condition: service_completed_successfully } }
   worker:
     build: .
@@ -36,4 +38,5 @@ services:
       AWS_ACCESS_KEY_ID: "local"       # ElasticMQ ignores credentials; boto3 just needs values
       AWS_SECRET_ACCESS_KEY: "local"
       AWS_DEFAULT_REGION: "us-east-1"
+      PROVIDER_LATENCY_MS: "50" # simulated PSP round trip, so the game day can kill the worker mid-batch
     depends_on: { migrate: { condition: service_completed_successfully }, sqs: { condition: service_started } }

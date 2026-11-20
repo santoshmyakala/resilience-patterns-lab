@@ -43,7 +43,8 @@ def main() -> None:
     pool = db.make_pool()
     while True:
         try:
-            run(queue, pool, FakePaymentProvider(), stop=lambda: stopping)
+            provider = FakePaymentProvider(latency_seconds=float(os.environ.get("PROVIDER_LATENCY_MS", "0")) / 1000)
+            run(queue, pool, provider, stop=lambda: stopping)
             return
         except Exception:  # noqa: BLE001 - dependency outage: back off, don't crash-loop
             log.exception("worker loop error")

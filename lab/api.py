@@ -15,8 +15,9 @@ from pydantic import BaseModel, Field
 from . import db
 from . import deadline as dl
 from .admission import ConcurrencyLimiter, Overloaded
+from .breaker import CircuitBreaker, State
 from .dependencies import FraudClient
-from .metrics import LATENCY, REQUESTS_SHED
+from .metrics import BREAKER_STATE, LATENCY, REQUESTS_SHED
 from .payments import IdempotencyConflict, create_payment
 
 UNSHED = ("/healthz", "/metrics")
@@ -105,4 +106,12 @@ def create_app(
 
 
 def main() -> FastAPI:  # uvicorn --factory lab.api:main
-    return create_app(db.make_pool(), FraudClient(os.environ.get("FRAUD_URL", "http://localhost:8081")))
+    breaker = CircuitBreaker(
+        "fraud",
+        failure_threshold=int(os.environ.get("FRAUD_BREAKER_THRESHOLD", "5")),
+        reset_after=float(os.environ.get("FRAUD_BREAKER_RESET_SECONDS", "30")),
+        on_state_change=lambda n, st: BREAKER_STATE.labels(n).set(0 if st is State.CLOSED else 1),
+    )
+    return create_app(
+        db.make_pool(), FraudClient(os.environ.get("FRAUD_URL", "http://localhost:8081"), breaker=breaker)
+    )
