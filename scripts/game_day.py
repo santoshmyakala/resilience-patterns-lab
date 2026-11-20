@@ -226,7 +226,16 @@ def main() -> int:
     if a.compose:
         res = burst(api, 200, 20, "kill")
         ids = [r[2]["payment_id"] for r in res if r[0] == 202 and r[2].get("status") == "pending"]
-        time.sleep(2)  # let the worker get going
+        # kill only once the worker is demonstrably mid-batch (some, not all, payments captured)
+        start = time.time()
+        while time.time() - start < 60:
+            with psycopg.connect(a.db) as conn:
+                mid = conn.execute(
+                    "SELECT count(*) FROM payments WHERE payment_id = ANY(%s::uuid[]) AND status='captured'", (ids,)
+                ).fetchone()[0]
+            if mid >= len(ids) // 5:
+                break
+            time.sleep(0.2)
         subprocess.run(["docker", "compose", "kill", "-s", "SIGKILL", "worker"], check=True)
         with psycopg.connect(a.db) as conn:
             mid = conn.execute(
@@ -242,8 +251,8 @@ def main() -> int:
         rep.check(
             "5 worker SIGKILL",
             "killed mid-batch, restarted: nothing lost",
-            done == len(ids),
-            f"{mid}/{len(ids)} captured at kill · {done}/{len(ids)} after {took:.0f} s",
+            0 < mid < len(ids) and done == len(ids),
+            f"{mid}/{len(ids)} captured at kill · {done}/{len(ids)} after restart ({took:.0f} s)",
         )
         rep.check(
             "5 worker SIGKILL",

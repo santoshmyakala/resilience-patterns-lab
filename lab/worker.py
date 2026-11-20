@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import threading
 import time
 
 from . import db
@@ -15,9 +16,21 @@ from .queue import Queue, SqsQueue
 log = logging.getLogger("worker")
 
 
-def run(queue: Queue, pool, provider, *, stop=lambda: False, wait_seconds: float = 10) -> None:
+def relay_loop(pool, queue: Queue, stop, interval: float = 0.5) -> None:
+    """Publish committed outbox rows continuously, independent of the consumer's long-polling."""
     while not stop():
-        publish_outbox(pool, queue)
+        try:
+            if publish_outbox(pool, queue) == 0:
+                time.sleep(interval)
+        except Exception:  # noqa: BLE001 - keep relaying through transient DB/queue errors
+            log.exception("outbox relay error")
+            time.sleep(interval * 4)
+
+
+def run(queue: Queue, pool, provider, *, stop=lambda: False, wait_seconds: float = 10) -> None:
+    relay = threading.Thread(target=relay_loop, args=(pool, queue, stop), name="outbox-relay", daemon=True)
+    relay.start()
+    while not stop():
         for msg in queue.receive(max_messages=10, wait_seconds=wait_seconds):
             try:
                 process_message(pool, queue, provider, msg)
