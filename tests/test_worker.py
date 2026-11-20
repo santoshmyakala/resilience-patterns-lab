@@ -99,3 +99,13 @@ def test_failed_job_is_backed_off_then_retried_not_dropped(clean, harness):
     harness.queue.change_visibility(msg, 0)  # skip the backoff wait
     [again] = harness.receive()
     assert again.receive_count == 2 and harness.queue.dlq_depth() == 0
+
+
+def test_statement_timeout_follows_the_request_deadline(clean):
+    from lab import db
+    from lab import deadline as dl
+
+    with dl.deadline(0.3), db.transaction(clean) as conn:
+        assert conn.execute("SHOW statement_timeout").fetchone()[0] in {"300ms", "299ms", "298ms"}
+    with db.transaction(clean) as conn:
+        assert conn.execute("SHOW statement_timeout").fetchone()[0] == "1s"  # default when no deadline

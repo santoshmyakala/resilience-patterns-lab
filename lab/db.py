@@ -84,5 +84,6 @@ if __name__ == "__main__":
 def transaction(pool: ConnectionPool, default_timeout_ms: int = 1000) -> Iterator[psycopg.Connection]:
     budget_ms = int(dl.timeout_for(default_timeout_ms / 1000) * 1000)
     with pool.connection(timeout=dl.timeout_for(5.0)) as conn, conn.transaction():
-        conn.execute(f"SET LOCAL statement_timeout = {max(budget_ms, 1)}")
+        # set_config(..., is_local => true) == SET LOCAL, but parameterised
+        conn.execute("SELECT set_config('statement_timeout', %s, true)", (str(max(budget_ms, 1)),))
         yield conn
