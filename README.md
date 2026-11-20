@@ -99,6 +99,28 @@ DATABASE_URL=postgresql://postgres:lab@localhost:5432/lab pytest -v
 
 Add `SQS_ENDPOINT=http://localhost:9324` (with `softwaremill/elasticmq-native` running) to repeat the worker tests against the SQS API.
 
+## Game day in GitHub Actions
+
+[![game-day](https://github.com/santoshmyakala/resilience-patterns-lab/actions/workflows/game-day.yml/badge.svg)](https://github.com/santoshmyakala/resilience-patterns-lab/actions/workflows/game-day.yml)
+
+The [`game-day`](.github/workflows/game-day.yml) workflow runs weekly, on every change to the service, and on demand. It starts the whole stack with Docker Compose (API, worker, Postgres, ElasticMQ and a fault-injectable dependency). Then [`scripts/game_day.py`](scripts/game_day.py) runs five experiments, and any broken expectation fails the run. Results from a CI run:
+
+| Experiment | What happens | Result |
+|---|---|---|
+| Baseline | 300 payments at concurrency 10 | p50 45 ms · p99 71 ms · **300/300 captured end to end in 15 s** |
+| Duplicate storm | 50 concurrent POSTs with one `Idempotency-Key` | **1 payment**, 49 replays |
+| Dependency down | Fraud service returns 503 | Circuit opens; 100/100 accepted as `review`; **p99 43 ms**; auto-recovers after 10 s |
+| Overload | 192 simultaneous requests against a limit of 32 | 65 admitted, all within the 2 s deadline on the server; **127 shed** with `503 + Retry-After` |
+| Worker SIGKILL | Kill the worker mid-batch, restart it | 43/200 captured at kill → **200/200 after restart, 200 ledger rows: nothing lost, nothing doubled** |
+
+The first game day found two real issues:
+- **Slow relay.** New jobs waited up to one 10-second long-poll before the outbox relay published them. The relay now runs on its own thread.
+- **Weak experiment.** The kill landed before any work had started, so it proved less than it claimed. The experiment now asserts the kill happens mid-batch.
+
+Other workflows:
+- [`ci`](.github/workflows/ci.yml): lint, then unit + integration tests on Postgres and ElasticMQ, then the shared secure-container pipeline (Semgrep, Trivy, SBOM, smoke test, keyless signing).
+- [`diagrams`](.github/workflows/diagrams.yml): fails if the SVGs drift from their YAML.
+
 ## Play with it
 
 ```bash
