@@ -148,10 +148,6 @@ curl -s localhost:8080/metrics | grep -E 'lab_(circuit|degraded|retries|requests
 - **Migrations run as their own step** (`python -m lab.db`), never at application start-up. A fleet of starting tasks shouldn't race to alter the schema.
 - **One retry layer.** Only the client edge retries. Internal calls use `NO_RETRY` or a budgeted policy, which is what keeps the amplification table above linear.
 
-## Credits
-
-Inspired by the timeout, retry and asynchronous-processing chapters of a public AWS architecture infographic series by [@veriqta](https://www.instagram.com/veriqta/). All code, tests and write-ups here are original.
-
 ## Licence
 
 MIT
