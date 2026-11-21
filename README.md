@@ -18,8 +18,6 @@ It's the application half of [aws-saas-production-platform](https://github.com/s
   <img alt="Exactly-once effects: the API writes the payment, the idempotency key and an outbox row in one transaction; a relay publishes to SQS; the worker captures with the provider using the payment's idempotency key, inserts the ledger entry with ON CONFLICT DO NOTHING in the same transaction and acknowledges only after commit; a crash before acknowledgement causes a redelivery that becomes a no-op; poison messages go to the DLQ after five receives." src="docs/diagrams/exactly-once-light.svg" width="100%">
 </picture>
 
-<sub>Animated diagrams generated from <a href="docs/diagrams">docs/diagrams/diagrams.yaml</a> with <a href="https://github.com/santoshmyakala/santoshmyakala/tree/main/tools/archdiagram">archdiagram</a>.</sub>
-
 The delivery guarantee is *at-least-once*, so the design makes the **effect** exactly-once:
 
 | Layer | Mechanism | Code |
